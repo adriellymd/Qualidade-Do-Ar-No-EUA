@@ -1,0 +1,357 @@
+---
+title:
+author: 
+date: 
+output:
+  pdf_document: default
+  html_document: default
+
+header-includes:
+   - \usepackage{caption, graphicx, subfig, epstopdf, enumitem}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Tema: Qualidade do ar no EUA
+
+Introdução e objetivos:
+- contexto histórico(situação atual da qualidade do ar no mundo)
+- o que fizemos
+- por que fizemos?
+  -> motivação por causa do contexto histórico, sabemos que tá uma merda, com isso vamos ver o quão merda está nos estados unidos ao decorrer de 41 anos (1980, 2021).
+  
+Metodologia:
+-explicar o banco de dados
+  ->as variáveis utilizadas
+-dificuldades/coisas que aprendemos
+  -> mapa
+  -> o que deu errado e ajustamos
+
+Análise dos dados:
+gráfico geral dos eua(mediana, maximo, q3) -ok
+mapa -ok
+->california 
+tabela com os tipos de dias, pegar top 5 ruins e montar os gráficos -ficou muito ruim, esses dias são uma merda
+-gráfico de linha de estados específicos(mediana, media, q90) - ok
+-gráfico dos dias ruins
+-gráfico da soma dos piores dias
+
+
+fazer toda essa análise mas apena para os anos de 1995 e 2009
+
+Conclusão:
+qq a gnt viu
+
+Referência:
+-procurar coisas para usar como referências sobre esse tema: qualidade no ar nos estados unidos
+
+\newpage
+## análise 1
+```{r, include=FALSE}
+#baixando banco de dados
+if(!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, dplyr, ggplot2, htmlwidgets, webshot, knitr, ggthemes, psych, kableExtra, formattable,readr, magrittr, scalegames, lubridate, plotly, RColorBrewer)
+
+
+
+
+banco1 <- read.csv("banco/aqi_2013.csv")
+banco2<- read.csv("banco/aqi_2014.csv")
+banco3<- read.csv("banco/aqi_2015.csv")
+banco4<- read.csv("banco/aqi_2016.csv")
+banco5<- read.csv("banco/aqi_2017.csv")
+banco6<- read.csv("banco/aqi_2018.csv")
+banco7<- read.csv("banco/aqi_2019.csv")
+banco8<- read.csv("banco/aqi_2020.csv")
+banco9<- read.csv("banco/aqi_2021.csv")
+banco10<- read.csv("banco/aqi_2022.csv")
+banco11<- read.csv("banco/aqi_2023.csv")
+
+#juntando
+lista_de_dataframes<- list(banco1, banco2, banco3, banco4, banco5, banco6, banco7, banco8, banco9, banco10, banco11)
+
+banco <- do.call(rbind, lista_de_dataframes)
+
+banco$Date<- ymd(banco$Date)
+
+banco<- banco %>%
+  rename(Estado = State.Name, Condado =  county.Name, Cod_Estado = State.Code, Cod_Condado =County.Code, Data = Date, Categoria= Category, `Parâmetro` = Defining.Parameter, Local= Defining.Site, Qtd_de_Locais_que_reportaram = Number.of.Sites.Reporting )
+#medidas resumo
+graf_linhas<- banco %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(six_months) %>%
+  summarize(med = median(AQI), max = max(AQI), min= min(AQI), q3 = quantile(AQI, p=0.75), q90 = quantile(AQI, p=0.9))
+
+
+
+#gráfico da mediana
+ggplot(graf_linhas, aes(x = six_months,)) +
+  geom_line(aes( y = med, group = 1, color = "Mediana")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(
+    x = "2013-2023",
+    y = "Mediana",
+    color = "Medida-resumo"
+    )
+  
+
+
+```
+
+Percebemos ao traçar um gráfico de linha sobre a mediana do AQI de cada 6 meses que obtemos momentos de crescimento e descrescimento bem consistentes. Todo mês de janeiro, temos picos nessa mediana que caem até o mês de julho e depois crescem até o próximo janeiro novamente. Entretando conseguimos observar que nesse último ano, esse comportamento da mediana do AQI do mês de janeiro para julho não ocorreu, ele continuou crescendo.
+
+
+\newpage
+## comparando mediana contra outras medidas, máximo é absurdamente maior
+```{r fig-sub, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico de linha da mediana pelos anos'}
+#gráfico da mediana vs outras medidas em linhas
+ggplot(graf_linhas, aes(x = six_months,)) +
+  geom_line(aes( y = med, group = 1, color = "Mediana")) +
+  geom_line(aes(y = max, group = 1, color = "Máximo")) +
+  geom_line(aes(y = min, group = 1, color = "Mínimo")) +
+  geom_line(aes(y = q3, group = 1, color = "q3")) +
+  geom_line(aes(y = q90, group = 1, color = "q90")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_sqrt()+
+  labs(color = "Medidas-resumo") +
+  scale_color_manual(values = c("Mediana" = "green", "Máximo" = "maroon","q90" = "red", "q3" = "orange", "Mínimo" = "blue")) +
+  xlab("2013-2023") +
+  ylab("Medidas-resumo em raiz-quadrada")
+```
+
+Ao ver os dados graficamente, podemos observar a diferença arlamente entre todas as medidas e o máximo de cada 6 meses. Até o percentil de 90% fica próximo dos outros dados, enquanto o máximo está muito maior. Ademais é notório a necessidade da mudança de escala no eixo y, para que o gráfico conseguisse suportar essa diferença.
+
+
+
+
+
+\newpage
+## mapa?
+```{r fig-sub-2, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Mapa choropleth da mediana do AQI por estado '}
+library(maps)
+library(stringr)
+library(viridis)
+
+state_map <- map_data("state")
+state_map <- state_map %>%
+  rename(Estado = region)
+
+state_map$Estado<- str_to_title(state_map$Estado)
+
+p<- banco %>%
+  group_by(Estado) %>%
+  summarize(med_aqi = median(AQI)) %>%
+  right_join(state_map, by = "Estado") %>%
+  ggplot()+
+  geom_polygon(aes(long, lat, group=group, fill = med_aqi), color = "white")+
+  scale_fill_gradient(low = "yellow", high = "maroon", name = "AQI") +
+  theme_void() +
+  labs(title = "Mapa dos EUA")
+  
+
+p
+```
+\begin{center}
+    \href{https://gahenvi.github.io/mapa/}{Link de uma versão interativa}
+\end{center}
+
+
+
+## teste mapa interativo
+```{r, include=FALSE}
+library(leaflet)
+library(sf)
+
+state_data <- sf::st_read("tl_2023_us_state/tl_2023_us_state.shp")
+
+state_data <- state_data %>%
+  rename(Estado = NAME)
+
+
+x <- banco %>%
+  group_by(Estado) %>%
+  summarize(med_aqi = median(AQI)) %>%
+  left_join(state_data, by = "Estado")  %>%
+  st_as_sf()
+
+
+pal <- colorNumeric(
+  palette = "Reds",  
+  domain = x$med_aqi  
+)
+
+
+mytext <- paste(
+  "Estado: ", x$Estado,"<br/>", 
+  "Mediana do AQI: ", x$med_aqi, "<br/>", 
+  sep="") %>%
+  lapply(htmltools::HTML)
+
+
+m<- leaflet() %>%
+  setView(lng = -98.5795, lat = 39.8283, zoom = 4) %>%
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+  addTiles() %>%
+  addPolygons(data = x,
+              fillColor = ~pal(med_aqi),
+              fillOpacity = 0.7,
+              color = "white",
+              stroke = TRUE,
+              weight = 1 ,
+              opacity = 1,
+              label = mytext,
+              
+  )
+
+```
+Por esse mapa, podemos observar que as maiores medianas estão ao redor da costa oeste do país e os estados de California, Arizona, Utah e Colorado tem as maiores medianas, eles tem respectivamente, 45, 44, 44 e 44. Esses estados tem histórico de problemas com a qualidade do ar, visto que ...
+
+Podemos também aprofundar a nossa análise desses estados. Ao visualizar por tabela e gráfico temos:
+
+
+
+\newpage
+## Analise dos estados específicos pelo aqi
+```{r fig-sub-3, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico violino das medidas resumo do AQI separado por estado', fig.subcap=c('mean','Mediana','max', 'q3' ,'p90'), out.width='.49\\linewidth' ,fig.height=5, fig.asp=NA, fig.ncol=2, fig.nrow=3}
+
+
+
+states_foco <- banco %>%
+  filter(Estado %in% c("California", "Arizona")) %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(Estado, six_months) %>%
+  summarize('Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Máximo' = max(AQI), 'Mínimo' = min(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95)) %>%
+  ungroup() 
+
+desfoco<-banco %>%
+  filter(!(Estado %in% c("California", "Arizona"))) %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(six_months) %>%
+  summarize(Estado = "Outros", 'Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Máximo' = max(AQI), 'Mínimo' = min(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95)) %>%
+  ungroup() %>%
+  select(Estado, six_months, `Média`, Mediana, `Desvio Padrão`, `Máximo`, `Mínimo`, `Terceiro Quartil`, `Percentil de ordem 95`)
+
+
+states_foco <- rbind(states_foco, desfoco)
+states_foco$Estado <- as.factor(states_foco$Estado)
+states_foco$Estado <- ordered(states_foco$Estado, c("Arizona", "California", "Outros"))
+
+
+states_foco <- states_foco %>%
+  mutate(six_months = as.Date(six_months))  
+
+
+ggplot(states_foco, aes(color = Estado)) + 
+  geom_density(aes(x= `Média`))
+
+ggplot(states_foco, aes(color = Estado)) + 
+  geom_density(aes(x= Mediana))
+
+ggplot(states_foco, aes(color = Estado)) + 
+  geom_density(aes(x= `Máximo`))
+
+ggplot(states_foco, aes(color = Estado)) + 
+  geom_density(aes(x= `Terceiro Quartil`))
+
+ggplot(states_foco, aes(color = Estado)) + 
+  geom_density(aes(x= `Percentil de ordem 95`))
+
+
+```
+
+
+Os gráficos mostram evidentemente como a densidade de todas medidas-resumo do AQI dos anos 2013-2023 dos estados destacados é superior que os outros estados. 
+
+Para o gráfico da média, temos que os ademais estados tem alta concentração em valores abaixo de 40, enquanto arizona está mais para 47 e california ainda acima, possuindo alta concentração de valores acima de 50, cujo index classifica o ar como moderado e não bom. 
+
+A mediana evidência ainda mais esse comportamento, entretando temos que os estados estão mais dispersos. Contudo ainda é california que tem maior frequência de mediana com valores acima de 50, enquanto Arizona tem seu pico em 45 de AQI, mas segue a cair drásticamente após.
+
+No gráfico de máximo nota-se que até mesmo Arizona, com seus alto índices de qualidade do ar tem os máximos mais concentrados a valores entre 0 e 100 como os demais estados. Contudo, é Califórnia que se estende desde acima de 0 até mais de 6 mil, possuindo alta concentração de máximos com valores altos. 
+
+Ademais, é notável no gráfico do terceiro quartil e do percentil de ordem 95, onde as distribuições chegam até 150, essas medidas do AQI não se comparam com o máximo, dado que até mesmo os demais estados tem máximos maiores que mil. Pode-se observar então uma alta disparidade entre os top 5% e os demais dos casos.
+
+
+## tabela
+```{r, echo = FALSE, message=FALSE, error=FALSE}
+#  medidas resumo
+
+dados_tabela <- banco %>%
+  filter(Estado %in% c("California", "Arizona", "Utah", "Colorado")) %>%
+  group_by(Estado) %>%
+  summarize('Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95), 'Máximo' = max(AQI)) 
+
+complemento<- banco %>%
+  filter(!(Estado %in% c("California", "Arizona", "Utah", "Colorado"))) %>%
+  summarize(Estado = "Outros", 'Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95), 'Máximo' = max(AQI)) 
+  
+
+dados_tabela<- rbind(dados_tabela, complemento)
+
+dados_tabela <- dados_tabela %>%
+    mutate(
+    `Média` = round(`Média`, 2),
+    `Desvio Padrão` = round(`Desvio Padrão`, 2)
+    ) %>%
+  select(Estado, 'Média', 'Desvio Padrão',Mediana,'Terceiro Quartil', 'Percentil de ordem 95', 'Máximo')%>%
+  arrange(desc(`Média`))
+kable(dados_tabela,format="latex" , caption = "Medidas-resumo do AQI de 2013-2023 de certos estados") %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+## Quem tem mais hazardous days?
+```{r}
+
+banco$Categoria<- as.factor(banco$Categoria)
+banco$Categoria<- ordered(banco$Categoria, c("Hazardous", "Very Unhealthy", "Unhealthy", "Unhealthy for Sensitive Groups", "Moderate", "Good"))
+
+
+mudancas<- banco %>%
+  mutate(sixm = cut(Data, "6 months")) %>%
+  group_by(sixm, Estado, Categoria)%>%
+  summarize(quantidade = n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = Categoria, values_from = quantidade, values_fill = 0) %>%
+  filter(Hazardous != 0)
+
+
+top5<- mudancas %>%
+  group_by(Estado) %>%
+  summarize(Hazardous = sum(Hazardous)) %>%
+  top_n(5, Hazardous)
+
+resto <- mudancas %>%
+  filter(!(Estado %in% top5$Estado)) %>%
+  summarize(Hazardous = sum(Hazardous)) %>%
+  mutate(Estado = "Outros")
+
+dados_grafico <- bind_rows(top5, resto)
+
+total<- sum(dados_grafico$Hazardous)
+dados_grafico$Fr<- paste0(round(dados_grafico$Hazardous / total * 100, 2), "%")
+
+
+  
+  
+dados_grafico %>%
+  arrange(desc(Hazardous)) %>%
+  ggplot() +
+  geom_col(aes(x = reorder(Estado, Hazardous), y = Hazardous, fill = Estado)) +
+  geom_text(aes(x = Estado, y = Hazardous, label = Fr), vjust = -0.5, size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set2")+
+  labs(
+    y = "Quantidade de dias horríveis",
+    x = "Estados",
+    fill = "Estados"
+  )
+
+
+
+
+```
+
+
+

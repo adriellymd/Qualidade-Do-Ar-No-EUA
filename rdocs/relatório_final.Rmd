@@ -1,0 +1,361 @@
+---
+title: " " 
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+   - \usepackage{caption, graphicx, subfig, epstopdf, enumitem}
+---
+```{r, include= FALSE}
+#baixando banco de dados
+if(!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, dplyr, ggplot2, htmlwidgets, webshot, knitr, ggthemes, psych, kableExtra, formattable,readr, magrittr, scalegames, lubridate, plotly, RColorBrewer)
+
+
+
+
+banco1 <- read.csv("banco/aqi_2013.csv")
+banco2<- read.csv("banco/aqi_2014.csv")
+banco3<- read.csv("banco/aqi_2015.csv")
+banco4<- read.csv("banco/aqi_2016.csv")
+banco5<- read.csv("banco/aqi_2017.csv")
+banco6<- read.csv("banco/aqi_2018.csv")
+banco7<- read.csv("banco/aqi_2019.csv")
+banco8<- read.csv("banco/aqi_2020.csv")
+banco9<- read.csv("banco/aqi_2021.csv")
+banco10<- read.csv("banco/aqi_2022.csv")
+banco11<- read.csv("banco/aqi_2023.csv")
+
+#juntando
+lista_de_dataframes<- list(banco1, banco2, banco3, banco4, banco5, banco6, banco7, banco8, banco9, banco10, banco11)
+
+banco <- do.call(rbind, lista_de_dataframes)
+
+banco$Date<- ymd(banco$Date)
+
+banco<- banco %>%
+  rename(Estado = State.Name, Condado =  county.Name, Cod_Estado = State.Code, Cod_Condado =County.Code, Data = Date, Categoria= Category, `Parâmetro` = Defining.Parameter, Local= Defining.Site, Qtd_de_Locais_que_reportaram = Number.of.Sites.Reporting )
+
+#medidas resumo
+graf_linhas<- banco %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(six_months) %>%
+  summarize(med = median(AQI), max = max(AQI), min= min(AQI), q3 = quantile(AQI, p=0.75), q90 = quantile(AQI, p=0.9))
+
+```
+
+# Introdução
+
+O objetivo deste relatório é examinar a qualidade do ar nos Estados Unidos durante o período de 2013 a 2023, visando expor os estados que apresentaram os piores índices de qualidade do ar conforme o AQI (Air Quality Index) ou Índice de Qualidade do Ar, é uma medida da qualidade do ar que combina diferentes poluentes atmosféricos. Ele fornece uma classificação da qualidade do ar em categorias como Boa, Moderada, Insalubre, etc. Os valores mais altos indicam maior risco para a saúde.
+
+![AQI](AQI.jpeg)
+
+Historicamente, a qualidade do ar nos Estados Unidos tem sido uma crescente preocupação, especialmente com o advento da Revolução Industrial no século XIX, que trouxe consigo emissões significativas provenientes de atividades industriais. Nos Estados Unidos, a conscientização sobre os perigos da poluição atmosférica levou à criação da Agência de Proteção Ambiental (EPA) em 1970, marcando um ponto de virada na abordagem regulatória e no monitoramento da qualidade do ar.
+
+No período de 2013 a 2023, observaram-se avanços significativos na gestão da qualidade do ar nos Estados Unidos. Inovações tecnológicas, regulamentações mais rigorosas e uma transição gradual para fontes de energia mais limpas contribuíram para melhorias perceptíveis. No entanto, mesmo com esses avanços notáveis, a questão da qualidade do ar nos Estados Unidos permanece dinâmica e sujeita a evoluções. A análise aprofundada dos 10 últimos anos será essencial para compreender melhor as tendências e identificar áreas que exigem atenção contínua.
+
+
+# Metodologia
+## Banco de dados
+O banco de dados utilizado vem do registro do governo dos EUA que computalizam e disponibilizam os dados acerca sobre a qualidade do ar em seu território. Dessa maneira, adquirimos tais bancos de dados e juntamos o reporte diário dos anos 2013 até 2023(inclusive), resultando em 11 anos de dados. Cada linha desse banco de dados é um dia de um condado e algumas informações, como o AQI medido naquele dia, a qual estado pertence o condado em que se obteve e até mesmo a data. Em geral, ele contém as seguintes variáveis:
+```{r, echo=FALSE, error=FALSE, message=FALSE, fig.align='center', fig.pos='H'}
+val_metodologia <- data.frame(
+  `Variável` = c(
+    "Estado",
+    "Condado",
+    "Cod_Estado",
+    "Cod_Condado",
+    "Data",
+    "AQI",
+    "Categoria",
+    "Parâmetro",
+    "Local",
+    "Qtd_de_Locais_que_reportaram"
+  ),
+  `Explicação` = c(
+    "Estado do condado, onde foi medido o AQI.",
+    "Condado do local, onde foi medido o AQI.",
+    "Código dos estados dos EUA.",
+    "Código dos condados do EUA.",
+    "Data em anos, meses e dias de quando foi medido o AQI",
+    "AQI medido",
+    "Tipo de dia definido pelo AQI.",
+    "Parâmetro utilizado para medir o AQI.",
+    "Local onde o AQI foi medido",
+    "Quantidade de locais que reportaram o AQI nesse dia."
+  ),
+  Exemplo = c(
+    "Califórnia, Idaho, Alabama.",
+    "Los Angeles, Ada, Baldwin.",
+    "6, 16, 1.",
+    "37, 1, 3.",
+    "2013-01-01.",
+    "36.",
+    "Bom.",
+    "PM2.5, Ozônio.",
+    "01-003-0010.",
+    "1."
+  )
+)
+
+kable(val_metodologia,"latex", caption = "Explicação das Variáveis") %>%
+  kable_styling(latex_options = c("hold_position"), full_width = FALSE) %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(0, bold = TRUE) %>%
+  kable_styling(latex_options = c("scale_down"))
+
+```
+
+Esse banco de dados consta com 3,4 milhões de observaçãoes e 10 colunas. Entretando não foram utilizadas todas as colunas, devido diferença da quantidade de condados por estado, o que resultado em uma dificuldade em trabalhar com algumas colunas, especialmente a de categoria.
+
+Foram se utilizadas para o desenvolvimento desse relatório várias técnicas, desde a simples tradução das colunas até o agrupamento de dados e pivoteamentos. Ademais utilizamos proveito de trabalhos anteriores de autoria própria para melhorar a representação dos dados.
+
+
+# Análises
+
+## Mediana ao longo dos 11 anos:
+```{r, fig-sub, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico de linha da mediana pelos anos', out.width='.99\\linewidth' ,fig.height=3.8}
+#gráfico da mediana
+ggplot(graf_linhas, aes(x = six_months,)) +
+  geom_line(aes( y = med, group = 1, color = "Mediana")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(
+    x = "2013-2023",
+    y = "Mediana",
+    color = "Medida-resumo"
+    )+
+  guides(color = "none")
+```
+
+Após o processo de tratamento e organização dos dados, avançamos para a fase de análise, nos concentrando inicialmente no Gráfico 1, que representa a mediana do AQI ao longo dos 11 anos. O gráfico revela padrões intrigantes. Ao traçar uma linha sobre a mediana a cada seis meses, destacamos períodos distintos de crescimento e queda. Uma observação notável é a recorrência de picos durante o mês de janeiro, seguidos por uma queda até julho, apenas para testemunhar um subsequente aumento até o próximo janeiro. Contudo, no ano de 2023, observa-se uma exceção, uma vez que a tendência de crescimento persiste no mês de janeiro, contrariando os padrões históricos de queda.
+
+\newpage
+
+## Máximo, Mínimo e Quartis nos últimos 10 anos nos Estados Unidos:
+
+```{r fig-sub-2 , echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico de linha de medidas-resumo pelos anos', out.width='.99\\linewidth' ,fig.height=3}
+#gráfico da mediana vs outras medidas em linhas
+ggplot(graf_linhas, aes(x = six_months,)) +
+  geom_line(aes( y = med, group = 1, color = "Mediana")) +
+  geom_line(aes(y = max, group = 1, color = "Máximo")) +
+  geom_line(aes(y = min, group = 1, color = "Mínimo")) +
+  geom_line(aes(y = q3, group = 1, color = "q3")) +
+  geom_line(aes(y = q90, group = 1, color = "q90")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_sqrt()+
+  labs(color = "Medidas-resumo") +
+  scale_color_manual(values = c("Mediana" = "green", "Máximo" = "maroon","q90" = "red", "q3" = "orange", "Mínimo" = "blue")) +
+  xlab("2013-2023") +
+  ylab("Medidas-resumo em raiz-quadrada")
+```
+
+O segundo gráfico exibe os valores máximos, mínimos e quartis de 75% e 90%, além da mediana do AQI nos últimos 11 anos nos Estados Unidos, os resultados revelam observações valiosas. É notável que os valores máximos, exibem discrepâncias significativas, sendo necessário ajustar a escala do eixo y para representar adequadamente essa diferença. Observa-se um padrão consistente no período de 2013 a janeiro de 2016, em que os valores máximos seguem uma trajetória semelhante à mediana. No entanto, a partir de janeiro de 2016, identificamos um aumento na amplitude dos picos de crescimento e decrescimento até julho de 2018. De julho de 2021 a janeiro de 2022, destaca-se um aumento expressivo nos valores máximos.
+
+
+## Mapa da Mediana do AQI por Estados:
+```{r fig-sub-3, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Mapa choropleth da mediana do AQI por estado ', out.width='.99\\linewidth' ,fig.height=3.2}
+library(maps)
+library(stringr)
+library(viridis)
+
+state_map <- map_data("state")
+state_map <- state_map %>%
+  rename(Estado = region)
+
+state_map$Estado<- str_to_title(state_map$Estado)
+
+p<- banco %>%
+  group_by(Estado) %>%
+  summarize(med_aqi = median(AQI)) %>%
+  right_join(state_map, by = "Estado") %>%
+  ggplot()+
+  geom_polygon(aes(long, lat, group=group, fill = med_aqi), color = "white")+
+  scale_fill_gradient(low = "yellow", high = "maroon", name = "AQI") +
+  theme_void() 
+  
+
+p
+```
+
+\begin{center}
+    \href{https://gahenvi.github.io/mapa/}{Link de uma versão interativa}
+\end{center}
+
+Diante da constatação de que os valores máximos do AQI superaram as expectativas, recorremos à elaboração de um Gráfico de Mapa para observar o comportamento do AQI por estados nos Estados Unidos. A observação da mediana revela padrões notáveis, com as maiores medianas concentradas ao longo da costa oeste, destacando-se os estados da Califórnia, Arizona, Utah e Colorado, com medianas de 45, 44, 44 e 44, respectivamente. Esses estados destacam-se como regiões críticas com históricos persistentes de enfrentar desafios relacionados à qualidade do ar. De forma irônica, os estados com as melhores medianas encontram-se também na região oeste, como Washington, Oregon e Idaho registrando medianas de 25, 28 e 28. 
+
+## Piores estados: 
+### Distribuição do AQI em Estados Específicos:
+
+```{r, echo = FALSE, message=FALSE, error=FALSE}
+#  medidas resumo
+
+dados_tabela <- banco %>%
+  filter(Estado %in% c("California", "Arizona", "Utah", "Colorado")) %>%
+  group_by(Estado) %>%
+  summarize('Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95), 'Máximo' = max(AQI)) 
+
+complemento<- banco %>%
+  filter(!(Estado %in% c("California", "Arizona", "Utah", "Colorado"))) %>%
+  summarize(Estado = "Outros", 'Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95), 'Máximo' = max(AQI)) 
+  
+
+dados_tabela<- rbind(dados_tabela, complemento)
+
+dados_tabela <- dados_tabela %>%
+    mutate(
+    `Média` = round(`Média`, 2),
+    `Desvio Padrão` = round(`Desvio Padrão`, 2)
+    ) %>%
+  select(Estado, 'Média', 'Desvio Padrão',Mediana,'Terceiro Quartil', 'Percentil de ordem 95', 'Máximo')%>%
+  arrange(desc(`Média`))
+
+#tabela
+kable(dados_tabela,format="latex" , caption = "Medidas-resumo do AQI de 2013-2023 de certos estados") %>%
+  kable_styling(latex_options = c("hold_position"), full_width = FALSE) %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(0, bold = TRUE) %>%
+  kable_styling(latex_options = c("scale_down"))
+
+```
+
+
+```{r fig-sub-4, echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico de dispersão de medidas resumo dos estados por medida', out.width='.32\\linewidth', fig.subcap=c(' ',' ',' ', ' ' ,' ') ,fig.height=5, fig.asp=NA, fig.ncol=3, fig.nrow=2}
+
+
+
+states_foco <- banco %>%
+  filter(Estado %in% c("California", "Arizona")) %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(Estado, six_months) %>%
+  summarize('Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Máximo' = max(AQI), 'Mínimo' = min(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95)) %>%
+  ungroup() 
+
+desfoco<-banco %>%
+  filter(!(Estado %in% c("California", "Arizona"))) %>%
+  mutate(six_months = cut(Data, breaks = "6 months")) %>%
+  group_by(six_months) %>%
+  summarize(Estado = "Outros", 'Média' = mean(AQI), Mediana = median(AQI), 'Desvio Padrão' = sd(AQI), 'Máximo' = max(AQI), 'Mínimo' = min(AQI), 'Terceiro Quartil' = quantile(AQI, probs = 0.75), 'Percentil de ordem 95' = quantile(AQI, probs = 0.95)) %>%
+  ungroup() %>%
+  select(Estado, six_months, `Média`, Mediana, `Desvio Padrão`, `Máximo`, `Mínimo`, `Terceiro Quartil`, `Percentil de ordem 95`)
+
+
+states_foco <- rbind(states_foco, desfoco)
+states_foco$Estado <- as.factor(states_foco$Estado)
+states_foco$Estado <- ordered(states_foco$Estado, c("Arizona", "California", "Outros"))
+
+
+states_foco <- states_foco %>%
+  mutate(six_months = as.Date(six_months))  
+
+
+ggplot(states_foco, aes(color = Estado, linetype = Estado)) + 
+  geom_density(aes(x= `Média`), linewidth = 1) +
+  scale_color_manual(values = c("orange", "gold", "blue")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"))
+
+
+ggplot(states_foco, aes(color = Estado, linetype = Estado)) + 
+  geom_density(aes(x= Mediana), linewidth = 1) +
+  scale_color_manual(values = c("orange", "gold", "blue")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"))
+
+
+ggplot(states_foco, aes(color = Estado, linetype = Estado)) + 
+  geom_density(aes(x= `Máximo`), linewidth = 1) +
+  scale_color_manual(values = c("orange", "gold", "blue")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"))
+
+ggplot(states_foco, aes(color = Estado, linetype = Estado)) + 
+  geom_density(aes(x= `Terceiro Quartil`), linewidth = 1) +
+  scale_color_manual(values = c("orange", "gold", "blue")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"))
+
+
+ggplot(states_foco, aes(color = Estado, linetype = Estado)) + 
+  geom_density(aes(x= `Percentil de ordem 95`), linewidth = 1) +
+  scale_color_manual(values = c("orange", "gold", "blue")) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted"))
+
+```
+
+
+
+Os gráficos dedicados à análise dos estados específicos revelam uma diferença marcante entre os estados destacados e os demais. Ao analisar a média do AQI, notamos que a Califórnia lidera com uma média de 54.87, indicando uma concentração considerável de valores acima de 50, categorizados como moderados e não bons para a saúde. Utah e Arizona também apresentam médias elevadas, reforçando a preocupação com a qualidade do ar nesses estados.
+
+A análise da mediana reforça esse padrão, com destaque para a Califórnia, onde a maioria das medianas ultrapassa 50, indicando uma persistente condição de qualidade do ar moderada ou inferior. Arizona, embora atinja um pico de 45, demonstra uma queda acentuada após esse ponto.
+
+A observação dos valores máximos é especialmente impactante para a Califórnia, que exibe uma ampla variação, desde valores acima de 0 até mais de 6 mil. Esta disparidade é destacada no terceiro quartil e no percentil de ordem 95, onde as distribuições chegam até 150, evidenciando uma notável diferença entre os 5% superiores e os demais casos.
+
+Por meio da tabela apresentada, é possível resumir essas observações, comparando as métricas de diferentes estados, destacando a Califórnia como uma área de preocupação significativa em relação à qualidade do ar.
+
+### Dias horríveis
+```{r fig-sub-5 , echo=FALSE, error=FALSE, message=FALSE, fig.cap='Gráfico de barras dos estados em relação a quantidade de dias ruins', out.width='.99\\linewidth' ,fig.height=5}
+
+banco$Categoria<- as.factor(banco$Categoria)
+banco$Categoria<- ordered(banco$Categoria, c("Hazardous", "Very Unhealthy", "Unhealthy", "Unhealthy for Sensitive Groups", "Moderate", "Good"))
+
+
+mudancas<- banco %>%
+  mutate(sixm = cut(Data, "6 months")) %>%
+  group_by(sixm, Estado, Categoria)%>%
+  summarize(quantidade = n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = Categoria, values_from = quantidade, values_fill = 0) %>%
+  filter(Hazardous != 0)
+
+
+top5<- mudancas %>%
+  group_by(Estado) %>%
+  summarize(Hazardous = sum(Hazardous)) %>%
+  top_n(5, Hazardous)
+
+resto <- mudancas %>%
+  filter(!(Estado %in% top5$Estado)) %>%
+  summarize(Hazardous = sum(Hazardous)) %>%
+  mutate(Estado = "Outros")
+
+dados_grafico <- bind_rows(top5, resto)
+
+total<- sum(dados_grafico$Hazardous)
+dados_grafico$Fr<- paste0(round(dados_grafico$Hazardous / total * 100, 2), "%")
+
+
+  
+  
+dados_grafico %>%
+  arrange(desc(Hazardous)) %>%
+  ggplot() +
+  geom_col(aes(x = reorder(Estado, Hazardous), y = Hazardous, fill = Estado)) +
+  geom_text(aes(x = Estado, y = Hazardous, label = Fr), vjust = -0.5, size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set2")+
+  labs(
+    y = "Quantidade de dias horríveis",
+    x = "Estados",
+    fill = "Estados"
+  )
+
+
+
+```
+
+Novamente, destaca-se uma grande diferença entre alguns estados e os demais. Observamos nesse gráfico de barras, que Califórnia sozinho possui 42.56% de todos os dias ruins registrados no banco de dados. Isso é uma diferença discrepante dado que a frequência relativa da soma dos dias horríveis de todos os outros estados que não estão presente no gráfico resulta nos arredores de 17% valor que compete apenas com o segundo lugar de maior frequências de dias horríveis por estado.
+
+\newpage
+
+# Conclusão
+
+Resumidamente, a análise da qualidade do ar nos Estados Unidos de 2013 a 2023 apresenta melhorias significativas devido a avanços tecnológicos e regulamentações mais rigorosas, mas ainda há desafios persistentes, especialmente em relação a padrões sazonais e discrepâncias regionais. A Califórnia é uma área crítica com qualidade do ar moderada ou inferior constantemente, e os valores máximos variáveis indicam a necessidade contínua de medidas eficazes para combater a poluição atmosférica e proteger a saúde pública.
+
+
+# Referências
+
+**[1. ]** Monitoramento da qualidade do ar nos Estados Unidos protege pessoas em todo o mundo. Disponível em: <https://share.america.gov/pt-br/monitoramento-da-qualidade-do-ar-nos-Estados Unidos-protege-pessoas-em-todo-o-mundo/>. Acesso em: 15 dez. 2023.
+
+**[2. ]** A Lei do Ar Limpo dos Estados Unidos faz 50 anos - BreatheLife2030. Disponível em: <https://breathelife2030.org/pt/news/united-states-clean-air-act-turns-50/>. Acesso em: 15 dez. 2023.
+
+**[3. ]** Saiba como a qualidade do ar melhorou nestas cidades. Disponível em: <https://share.america.gov/pt-br/saiba-como-a-qualidade-do-ar-melhorou-nestas-cidades/>. Acesso em: 15 dez. 2023.
+
+**[4. ]** Qualities of great AR experiences - WWDC22 - Videos - Apple Developer. Disponível em: <https://developer.apple.com/videos/play/wwdc2022/10131>. Acesso em: 15 dez. 2023.
+
+
