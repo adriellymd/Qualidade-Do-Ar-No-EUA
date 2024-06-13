@@ -20,5 +20,5 @@ Este repositório está organizado da seguinte maneira:
 
 ## Autora
 
-[httpadrfis](https://github.com/httpadrfis).
+[adriellymd](https://github.com/adriellymd)..
 
