@@ -18,7 +18,7 @@ Este repositório está organizado da seguinte maneira:
 - **rdocs**: Contém os documentos e scripts em RMarkdown utilizados na análise.
 - **resultados**: Contém as imagens geradas durante as análises.
 
-## Autor
+## Autora
 
-[httpadrfis](https://github.com/httpadrfis)
+[httpadrfis](https://github.com/httpadrfis).
 
